@@ -17,7 +17,10 @@ The port is complete, and not published yet. It follows libinjection 4.0.0
 (`d88a8f8`): the SQL tokenizer, folding, fingerprints and false-positive
 checks, the HTML5 tokenizer, and the XSS checks. Its one dependency is
 [memchr](https://crates.io/crates/memchr), for the byte searches. It has no
-`unsafe` code of its own, and needs neither `std` nor an allocator.
+`unsafe` code of its own, and needs neither `std` nor an allocator. With the
+`std` feature, which is off by default, memchr finds out at run time whether
+an x86-64 processor has AVX2 and searches with it: [Performance](#performance)
+has what that changes.
 
 The name is a play on the original's: `libinjection` and `libinjection-rs` are
 taken on crates.io, by bindings to the C library.
@@ -56,31 +59,54 @@ tables in `src` that are derived from it.
 of upstream's two speed tests, and its sample corpora. The SQL corpora go
 through the XSS detection as well, as inputs that are not XSS: those cost the
 most, since nothing ends the search early. All of these are short, a request
-parameter rather than a request body, so three inputs of 4 KB made up for the
-benchmark follow them: prose, a JSON document and a base64 blob, none of them
-an attack. On those, a search for a quote or for a `<` can run to the end of
-the input. Below is the time per input, in nanoseconds, as the median of five
-runs on an AMD Ryzen 9 7900, with libinjection built by GCC 16.2 at `-O3` and
-the port by Rust 1.99.
+parameter rather than a request body, so three inputs made up for the
+benchmark follow them, each at 4 KB and at 1 MB: prose, a JSON document and a
+base64 blob, none of them an attack. On those, a search for a quote or for a
+`<` can run to the end of the input.
 
-| Workload                    | Inputs | Average bytes | libinjection |    Port | Port / C |
-| --------------------------- | -----: | ------------: | -----------: | ------: | -------: |
-| sqli: upstream's speed test |      8 |            28 |        416.9 |   219.6 |    0.53x |
-| sqli: attack samples        | 85,802 |           141 |       1067.0 |   552.4 |    0.52x |
-| sqli: benign samples        |    423 |            34 |        598.9 |   331.7 |    0.55x |
-| xss: upstream's speed test  |     26 |            30 |        223.1 |    93.1 |    0.42x |
-| xss: attack samples         | 81,417 |            74 |        158.3 |    59.3 |    0.37x |
-| xss: sqli attack samples    | 85,802 |           141 |       1501.6 |   646.1 |    0.43x |
-| xss: benign samples         |    423 |            34 |        372.8 |   185.2 |    0.50x |
-| sqli: 4 KB of prose         |      1 |         4,096 |        632.3 |   423.5 |    0.67x |
-| sqli: 4 KB of JSON          |      1 |         4,096 |        411.7 |   323.8 |    0.79x |
-| sqli: 4 KB of base64        |      1 |         4,096 |       8491.9 |  3885.2 |    0.46x |
-| xss: 4 KB of prose          |      1 |         4,096 |      51633.8 | 20521.4 |    0.40x |
-| xss: 4 KB of JSON           |      1 |         4,096 |      27086.7 |  4019.3 |    0.15x |
-| xss: 4 KB of base64         |      1 |         4,096 |      12868.4 |  2342.0 |    0.18x |
+Below is the time per input, in nanoseconds, of the C library, of the port as
+it is by default, and of the port with its `std` feature. The times are
+medians over five runs of `cargo bench` and five of `cargo bench --features
+std`, pinned to a core with `taskset`, on an AMD Ryzen 9 7900, with
+libinjection built by GCC 16.2 at `-O3` and the port by Rust 1.99.
 
-The two sides run one after the other and nothing is pinned to a core, so
-small differences are noise: rebuilding alone can move a time by a tenth.
+| Workload                    | Inputs | Average bytes | libinjection |       Port | Port / C | With `std` | With `std` / C |
+| --------------------------- | -----: | ------------: | -----------: | ---------: | -------: | ---------: | -------------: |
+| sqli: upstream's speed test |      8 |            28 |        426.1 |      220.4 |    0.52x |      217.5 |          0.51x |
+| sqli: attack samples        | 85,802 |           141 |       1068.2 |      562.5 |    0.53x |      570.2 |          0.53x |
+| sqli: benign samples        |    423 |            34 |        609.7 |      332.3 |    0.55x |      334.1 |          0.55x |
+| xss: upstream's speed test  |     26 |            30 |        233.8 |       95.7 |    0.41x |      104.6 |          0.45x |
+| xss: attack samples         | 81,417 |            74 |        167.1 |       60.5 |    0.36x |       56.3 |          0.34x |
+| xss: sqli attack samples    | 85,802 |           141 |       1566.5 |      673.6 |    0.43x |      725.2 |          0.46x |
+| xss: benign samples         |    423 |            34 |        385.5 |      192.9 |    0.50x |      214.6 |          0.56x |
+| sqli: 4 KB of prose         |      1 |         4,096 |        641.5 |      424.0 |    0.66x |      371.3 |          0.58x |
+| sqli: 4 KB of JSON          |      1 |         4,096 |        416.7 |      321.5 |    0.77x |      288.2 |          0.69x |
+| sqli: 4 KB of base64        |      1 |         4,096 |       8991.0 |     3845.5 |    0.43x |     3627.9 |          0.40x |
+| xss: 4 KB of prose          |      1 |         4,096 |      54156.6 |    22735.7 |    0.42x |    26869.6 |          0.50x |
+| xss: 4 KB of JSON           |      1 |         4,096 |      29500.4 |     5993.2 |    0.20x |     4251.7 |          0.14x |
+| xss: 4 KB of base64         |      1 |         4,096 |      14010.2 |     3308.2 |    0.24x |     2381.7 |          0.17x |
+| sqli: 1 MB of prose         |      1 |     1,048,576 |      11881.0 |    16098.5 |    1.35x |    11516.3 |          0.97x |
+| sqli: 1 MB of JSON          |      1 |     1,048,576 |      11501.0 |    15998.8 |    1.39x |    11262.6 |          0.98x |
+| sqli: 1 MB of base64        |      1 |     1,048,576 |      31048.0 |    35032.1 |    1.13x |    25885.3 |          0.83x |
+| xss: 1 MB of prose          |      1 |     1,048,576 |   15453466.5 |  6838918.0 |    0.44x |  7756378.0 |          0.50x |
+| xss: 1 MB of JSON           |      1 |     1,048,576 |    7474922.5 |  1501109.4 |    0.20x |  1281124.4 |          0.17x |
+| xss: 1 MB of base64         |      1 |     1,048,576 |    3856476.7 |  1136360.1 |    0.29x |   896103.9 |          0.23x |
+
+What `std` buys is AVX2 in the searches for a byte, and it is worth having
+where those searches are most of the work: in the SQL detection, on long
+inputs. That one reads only the start of a long input and searches the rest
+for quotes, so that at 1 MB it is behind the C library without `std`, and
+level with it or ahead with it. At 4 KB the gain is about a tenth, and on
+short inputs there is none. The XSS detection reads all of its input, and the
+searches are a small part of that: its rows differ between the two builds,
+either way, by no more than they can between two builds of the same code.
+
+Small differences are noise in any case. Rebuilding alone can move a time by
+a tenth, an XSS row by a fifth, and the XSS rows on JSON and base64 by half:
+where the compiler happens to put the code matters that much. Pinning does
+not change that, nor the port's times. It does make the C library's steadier,
+and up to 9% higher on the XSS rows, for a reason not found: without it, the
+port's lead there is that much smaller.
 
 ## Missing quality of life APIs
 

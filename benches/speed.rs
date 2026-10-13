@@ -5,16 +5,17 @@
 //! sources vendored in `tests/upstream/src`, with the fixes the port has
 //! (`FIXES` in `tests/common`). That needs a C compiler:
 //! `CC` (default `cc`) with `CFLAGS` (default `-O3`, what upstream's
-//! `--enable-optimize` builds with).
+//! `--enable-optimize` builds with). `cargo bench --features std` times the
+//! port with its `std` feature.
 //!
 //! The workloads are the inputs of upstream's two speed tests,
 //! `src/test_speed_sqli.c` and `src/test_speed_xss.c`, and its sample
 //! corpora, the SQL ones through the XSS detection as well: it has no
 //! samples of its own that are not attacks. All of those are short, a
-//! request parameter rather than a request body, so three inputs of 4 KB
-//! made up here follow them: prose, a JSON document and a base64 blob. A
-//! time is that of the best of a second's worth of rounds over a workload,
-//! each calling the detection once per input.
+//! request parameter rather than a request body, so three inputs made up
+//! here follow them, each at 4 KB and at 1 MB: prose, a JSON document and a
+//! base64 blob. A time is that of the best of a second's worth of rounds
+//! over a workload, each calling the detection once per input.
 //!
 //! This is for a feel of where the port stands, not for small differences:
 //! nothing is pinned to a core, and the two sides run one after the other.
@@ -33,8 +34,9 @@ use std::time::{Duration, Instant};
 /// Rounds are made long enough for the clock not to matter.
 const MIN_ROUND: Duration = Duration::from_millis(10);
 
-/// The length of the long inputs.
-const LONG_INPUT: usize = 4096;
+/// The long inputs come in two lengths, `4 * KB` and `MB`.
+const KB: usize = 1 << 10;
+const MB: usize = 1 << 20;
 
 #[derive(Clone, Copy)]
 enum Detection {
@@ -113,17 +115,17 @@ fn samples(prefix: &str) -> Vec<Vec<u8>> {
 }
 
 /// Prose: the text of upstream's license, over and over.
-fn prose() -> Vec<u8> {
+fn prose(len: usize) -> Vec<u8> {
     common::upstream_source("COPYING")
         .bytes()
         .cycle()
-        .take(LONG_INPUT)
+        .take(len)
         .collect()
 }
 
 /// A JSON document: an array of records, and a string that makes up the
 /// length.
-fn json() -> Vec<u8> {
+fn json(len: usize) -> Vec<u8> {
     const PADDING: &str = r#"],"padding":""#;
     const END: &str = r#""}"#;
 
@@ -133,13 +135,13 @@ fn json() -> Vec<u8> {
         let record = format!(
             r#"{comma}{{"id":{id},"name":"user {id}","email":"user{id}@example.com","active":true,"roles":["admin","dev"]}}"#
         );
-        if document.len() + record.len() + PADDING.len() + END.len() > LONG_INPUT {
+        if document.len() + record.len() + PADDING.len() + END.len() > len {
             break;
         }
         document.push_str(&record);
     }
     document.push_str(PADDING);
-    while document.len() + END.len() < LONG_INPUT {
+    while document.len() + END.len() < len {
         document.push('x');
     }
     document.push_str(END);
@@ -148,11 +150,11 @@ fn json() -> Vec<u8> {
 
 /// A base64 blob: the alphabet, drawn by a fixed linear congruential
 /// generator.
-fn base64() -> Vec<u8> {
+fn base64(len: usize) -> Vec<u8> {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     let mut state: u64 = 0x2545_F491_4F6C_DD1D;
-    (0..LONG_INPUT)
+    (0..len)
         .map(|_| {
             // Knuth's MMIX multiplier and increment. The high bits are the
             // ones worth taking.
@@ -287,36 +289,67 @@ fn main() {
             inputs: samples("false_"),
         },
         // The long inputs: on them, a search for a quote or for a '<' can
-        // run through all 4 KB.
+        // run to the end of the input.
         Workload {
             name: "sqli: 4 KB of prose",
             detection: Detection::Sqli,
-            inputs: vec![prose()],
+            inputs: vec![prose(4 * KB)],
         },
         Workload {
             name: "sqli: 4 KB of JSON",
             detection: Detection::Sqli,
-            inputs: vec![json()],
+            inputs: vec![json(4 * KB)],
         },
         Workload {
             name: "sqli: 4 KB of base64",
             detection: Detection::Sqli,
-            inputs: vec![base64()],
+            inputs: vec![base64(4 * KB)],
         },
         Workload {
             name: "xss: 4 KB of prose",
             detection: Detection::Xss,
-            inputs: vec![prose()],
+            inputs: vec![prose(4 * KB)],
         },
         Workload {
             name: "xss: 4 KB of JSON",
             detection: Detection::Xss,
-            inputs: vec![json()],
+            inputs: vec![json(4 * KB)],
         },
         Workload {
             name: "xss: 4 KB of base64",
             detection: Detection::Xss,
-            inputs: vec![base64()],
+            inputs: vec![base64(4 * KB)],
+        },
+        // The same, 256 times as long: each starts as its 4 KB namesake.
+        Workload {
+            name: "sqli: 1 MB of prose",
+            detection: Detection::Sqli,
+            inputs: vec![prose(MB)],
+        },
+        Workload {
+            name: "sqli: 1 MB of JSON",
+            detection: Detection::Sqli,
+            inputs: vec![json(MB)],
+        },
+        Workload {
+            name: "sqli: 1 MB of base64",
+            detection: Detection::Sqli,
+            inputs: vec![base64(MB)],
+        },
+        Workload {
+            name: "xss: 1 MB of prose",
+            detection: Detection::Xss,
+            inputs: vec![prose(MB)],
+        },
+        Workload {
+            name: "xss: 1 MB of JSON",
+            detection: Detection::Xss,
+            inputs: vec![json(MB)],
+        },
+        Workload {
+            name: "xss: 1 MB of base64",
+            detection: Detection::Xss,
+            inputs: vec![base64(MB)],
         },
     ];
 
@@ -334,7 +367,7 @@ fn main() {
         common::c_flags("-O3")
     );
     println!(
-        "{:<28} {:>7} {:>9} {:>13} {:>9} {:>9}",
+        "{:<28} {:>7} {:>9} {:>13} {:>11} {:>9}",
         "workload", "inputs", "avg bytes", "libinjection", "port", "port / C"
     );
 
@@ -349,7 +382,7 @@ fn main() {
 
         let bytes: usize = workload.inputs.iter().map(Vec::len).sum();
         println!(
-            "{:<28} {:>7} {:>9.0} {:>13.1} {:>9.1} {:>8.2}x",
+            "{:<28} {:>7} {:>9.0} {:>13.1} {:>11.1} {:>8.2}x",
             workload.name,
             workload.inputs.len(),
             bytes as f64 / workload.inputs.len() as f64,
