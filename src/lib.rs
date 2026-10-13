@@ -8,6 +8,14 @@
 //! other here, while the C library takes it for the end of the input. It
 //! needs neither `std` nor an allocator.
 //!
+//! # Features
+//!
+//! - `std`, off by default. The searches for a byte are [memchr]'s, which
+//!   uses the instructions the crate was compiled for: SSE2 on x86-64,
+//!   unless told otherwise. With this feature it finds out at run time
+//!   whether the processor has AVX2, and uses that. It shows in [`sqli`],
+//!   the more so the longer the input.
+//!
 //! Inputs are bytes: decode them (URL-decoding, for instance) the way the
 //! application that will consume them does before checking them.
 //!
@@ -26,6 +34,7 @@
 //! BSD 3-Clause license, with libinjection's copyright notice: see `LICENSE`.
 //!
 //! [libinjection]: https://github.com/libinjection/libinjection
+//! [memchr]: https://crates.io/crates/memchr
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]

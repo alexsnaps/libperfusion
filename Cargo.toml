@@ -15,10 +15,15 @@ bench = false
 
 [dependencies]
 # For the byte searches of src/bytes.rs. Without its `std` feature, so that
-# this crate goes on needing neither `std` nor an allocator.
+# this crate goes on needing neither `std` nor an allocator, unless its own
+# `std` feature asks for it.
 memchr = { version = "2.7", default-features = false }
 
 [features]
+# Has memchr find out at run time whether an x86-64 processor has AVX2, and
+# search with it, which shows in the SQL detection on long inputs. Off by
+# default, as it needs `std` and nothing else here does.
+std = ["memchr/std"]
 # Exposes implementation details to this crate's own tests. Not part of the
 # API: anything behind it can change in any release.
 internals = []
