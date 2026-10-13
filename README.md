@@ -48,19 +48,29 @@ tables in `src` that are derived from it.
 `cargo bench` times the port next to the C library on the same inputs: those
 of upstream's two speed tests, and its sample corpora. The SQL corpora go
 through the XSS detection as well, as inputs that are not XSS: those cost the
-most, since nothing ends the search early. Below is the time per input, in
-nanoseconds, on an AMD Ryzen 9 7900, with libinjection built by GCC 16.2 at
-`-O3` and the port by Rust 1.99.
+most, since nothing ends the search early. All of these are short, a request
+parameter rather than a request body, so three inputs of 4 KB made up for the
+benchmark follow them: prose, a JSON document and a base64 blob, none of them
+an attack. On those, a search for a quote or for a `<` can run to the end of
+the input. Below is the time per input, in nanoseconds, as the median of five
+runs on an AMD Ryzen 9 7900, with libinjection built by GCC 16.2 at `-O3` and
+the port by Rust 1.99.
 
-| Workload                    | Inputs | Average bytes | libinjection |   Port | Port / C |
-| --------------------------- | -----: | ------------: | -----------: | -----: | -------: |
-| sqli: upstream's speed test |      8 |            28 |        422.5 |  212.3 |    0.50x |
-| sqli: attack samples        | 85,802 |           141 |       1059.4 |  583.5 |    0.55x |
-| sqli: benign samples        |    423 |            34 |        604.7 |  331.7 |    0.55x |
-| xss: upstream's speed test  |     26 |            30 |        222.1 |  102.0 |    0.46x |
-| xss: attack samples         | 81,417 |            74 |        157.2 |   65.4 |    0.42x |
-| xss: sqli attack samples    | 85,802 |           141 |       1495.6 |  734.2 |    0.49x |
-| xss: benign samples         |    423 |            34 |        371.3 |  208.4 |    0.56x |
+| Workload                    | Inputs | Average bytes | libinjection |    Port | Port / C |
+| --------------------------- | -----: | ------------: | -----------: | ------: | -------: |
+| sqli: upstream's speed test |      8 |            28 |        416.9 |   219.6 |    0.53x |
+| sqli: attack samples        | 85,802 |           141 |       1067.0 |   552.4 |    0.52x |
+| sqli: benign samples        |    423 |            34 |        598.9 |   331.7 |    0.55x |
+| xss: upstream's speed test  |     26 |            30 |        223.1 |    93.1 |    0.42x |
+| xss: attack samples         | 81,417 |            74 |        158.3 |    59.3 |    0.37x |
+| xss: sqli attack samples    | 85,802 |           141 |       1501.6 |   646.1 |    0.43x |
+| xss: benign samples         |    423 |            34 |        372.8 |   185.2 |    0.50x |
+| sqli: 4 KB of prose         |      1 |         4,096 |        632.3 |   423.5 |    0.67x |
+| sqli: 4 KB of JSON          |      1 |         4,096 |        411.7 |   323.8 |    0.79x |
+| sqli: 4 KB of base64        |      1 |         4,096 |       8491.9 |  3885.2 |    0.46x |
+| xss: 4 KB of prose          |      1 |         4,096 |      51633.8 | 20521.4 |    0.40x |
+| xss: 4 KB of JSON           |      1 |         4,096 |      27086.7 |  4019.3 |    0.15x |
+| xss: 4 KB of base64         |      1 |         4,096 |      12868.4 |  2342.0 |    0.18x |
 
 The two sides run one after the other and nothing is pinned to a core, so
 small differences are noise: rebuilding alone can move a time by a tenth.
