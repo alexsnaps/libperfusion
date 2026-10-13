@@ -14,6 +14,9 @@ exclude = ["/benches", "/tests"]
 bench = false
 
 [dependencies]
+# For the byte searches of src/bytes.rs. Without its `std` feature, so that
+# this crate goes on needing neither `std` nor an allocator.
+memchr = { version = "2.7", default-features = false }
 
 [features]
 # Exposes implementation details to this crate's own tests. Not part of the

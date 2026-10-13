@@ -5,6 +5,7 @@
 pub(crate) mod events;
 
 use self::events::BLACK_ATTR_EVENTS;
+use crate::bytes::contains;
 use crate::html5::{Context, TokenKind, Tokenizer};
 
 /// Why an attribute is of interest.
@@ -267,7 +268,7 @@ pub fn is_xss(input: &[u8], context: Context) -> bool {
             }
             TokenKind::TagComment => {
                 // IE uses a "`" as a tag ending char.
-                if text.contains(&b'`') {
+                if contains(text, b'`') {
                     return true;
                 }
 

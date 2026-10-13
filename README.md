@@ -15,8 +15,9 @@ assert!(libperfusion::xss(b"<script>alert('xss')</script>"));
 
 The port is complete, and not published yet. It follows libinjection 4.0.0
 (`d88a8f8`): the SQL tokenizer, folding, fingerprints and false-positive
-checks, the HTML5 tokenizer, and the XSS checks. It has no dependencies and no
-`unsafe` code, and needs neither `std` nor an allocator.
+checks, the HTML5 tokenizer, and the XSS checks. Its one dependency is
+[memchr](https://crates.io/crates/memchr), for the byte searches. It has no
+`unsafe` code of its own, and needs neither `std` nor an allocator.
 
 The name is a play on the original's: `libinjection` and `libinjection-rs` are
 taken on crates.io, by bindings to the C library.
