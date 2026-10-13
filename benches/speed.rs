@@ -10,9 +10,11 @@
 //! The workloads are the inputs of upstream's two speed tests,
 //! `src/test_speed_sqli.c` and `src/test_speed_xss.c`, and its sample
 //! corpora, the SQL ones through the XSS detection as well: it has no
-//! samples of its own that are not attacks. A time is that of the best of a
-//! second's worth of rounds over a workload, each calling the detection once
-//! per input.
+//! samples of its own that are not attacks. All of those are short, a
+//! request parameter rather than a request body, so three inputs of 4 KB
+//! made up here follow them: prose, a JSON document and a base64 blob. A
+//! time is that of the best of a second's worth of rounds over a workload,
+//! each calling the detection once per input.
 //!
 //! This is for a feel of where the port stands, not for small differences:
 //! nothing is pinned to a core, and the two sides run one after the other.
@@ -30,6 +32,9 @@ use std::time::{Duration, Instant};
 
 /// Rounds are made long enough for the clock not to matter.
 const MIN_ROUND: Duration = Duration::from_millis(10);
+
+/// The length of the long inputs.
+const LONG_INPUT: usize = 4096;
 
 #[derive(Clone, Copy)]
 enum Detection {
@@ -104,6 +109,58 @@ fn samples(prefix: &str) -> Vec<Vec<u8>> {
     common::sample_lines(prefix)
         .iter()
         .map(|line| common::url_decode(line))
+        .collect()
+}
+
+/// Prose: the text of upstream's license, over and over.
+fn prose() -> Vec<u8> {
+    common::upstream_source("COPYING")
+        .bytes()
+        .cycle()
+        .take(LONG_INPUT)
+        .collect()
+}
+
+/// A JSON document: an array of records, and a string that makes up the
+/// length.
+fn json() -> Vec<u8> {
+    const PADDING: &str = r#"],"padding":""#;
+    const END: &str = r#""}"#;
+
+    let mut document = String::from(r#"{"users":["#);
+    for id in 1.. {
+        let comma = if id == 1 { "" } else { "," };
+        let record = format!(
+            r#"{comma}{{"id":{id},"name":"user {id}","email":"user{id}@example.com","active":true,"roles":["admin","dev"]}}"#
+        );
+        if document.len() + record.len() + PADDING.len() + END.len() > LONG_INPUT {
+            break;
+        }
+        document.push_str(&record);
+    }
+    document.push_str(PADDING);
+    while document.len() + END.len() < LONG_INPUT {
+        document.push('x');
+    }
+    document.push_str(END);
+    document.into_bytes()
+}
+
+/// A base64 blob: the alphabet, drawn by a fixed linear congruential
+/// generator.
+fn base64() -> Vec<u8> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    let mut state: u64 = 0x2545_F491_4F6C_DD1D;
+    (0..LONG_INPUT)
+        .map(|_| {
+            // Knuth's MMIX multiplier and increment. The high bits are the
+            // ones worth taking.
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ALPHABET[(state >> 58) as usize]
+        })
         .collect()
 }
 
@@ -228,6 +285,38 @@ fn main() {
             name: "xss: benign samples",
             detection: Detection::Xss,
             inputs: samples("false_"),
+        },
+        // The long inputs: on them, a search for a quote or for a '<' can
+        // run through all 4 KB.
+        Workload {
+            name: "sqli: 4 KB of prose",
+            detection: Detection::Sqli,
+            inputs: vec![prose()],
+        },
+        Workload {
+            name: "sqli: 4 KB of JSON",
+            detection: Detection::Sqli,
+            inputs: vec![json()],
+        },
+        Workload {
+            name: "sqli: 4 KB of base64",
+            detection: Detection::Sqli,
+            inputs: vec![base64()],
+        },
+        Workload {
+            name: "xss: 4 KB of prose",
+            detection: Detection::Xss,
+            inputs: vec![prose()],
+        },
+        Workload {
+            name: "xss: 4 KB of JSON",
+            detection: Detection::Xss,
+            inputs: vec![json()],
+        },
+        Workload {
+            name: "xss: 4 KB of base64",
+            detection: Detection::Xss,
+            inputs: vec![base64()],
         },
     ];
 

@@ -14,7 +14,7 @@ use self::keywords::{cstrcasecmp, lookup_word};
 pub use self::lexer::Dialect;
 use self::lexer::{Lexer, Quote};
 use self::token::{Token, TokenType};
-use crate::bytes::find_slice;
+use crate::bytes::{contains, find_slice};
 
 /// The most tokens a folded input, and so a fingerprint, can have.
 pub(crate) const MAX_TOKENS: usize = 5;
@@ -321,14 +321,14 @@ pub(crate) fn detect_with_dialect(input: &[u8]) -> Option<(Fingerprint, Dialect)
 
     // If the input has a single quote, test it as if it sat inside a
     // single-quoted string: "1' = 1" is read as "'1' = 1".
-    if input.contains(&b'\'')
+    if contains(input, b'\'')
         && let Some(result) = state.check_ansi_then_mysql_dialect(Quote::Single)
     {
         return Some(result);
     }
 
     // The same with a double quote, which only MySQL uses for strings.
-    if input.contains(&b'"') {
+    if contains(input, b'"') {
         return state
             .check(Quote::Double, Dialect::Mysql)
             .map(|fp| (fp, Dialect::Mysql));
